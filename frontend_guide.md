@@ -10,14 +10,28 @@ This guide defines the integration points for the Flutter Frontend using the Dja
 - **Screen**: Login
 - **Inputs**: `Local Body` (Text), `Pincode` (6 digits)
 - **Action**: `POST /auth/login`
-- **Body**:
+- **Request Body**:
   ```json
   {
     "localBody": "user_identifier",
     "pincode": "123456"
   }
   ```
-- **Success**:
+- **Response (200 OK)**:
+  ```json
+  {
+      "status": 200,
+      "data": {
+          "token": "eyJ0eX...",
+          "user": {
+              "id": "1",
+              "localBody": "user_identifier",
+              "pincode": "123456"
+          }
+      }
+  }
+  ```
+- **Success Handling**:
   - Save `token` securely (SecureStorage / SharedPrefs).
   - Attach header to **ALL** subsequent requests: `Authorization: Bearer <token>`
   - Navigate to Home Feed.
@@ -31,42 +45,113 @@ This guide defines the integration points for the Flutter Frontend using the Dja
 - **Query Params**:
   - `tab`: (Required) One of the tab names above.
   - `page`: (Optional) For pagination (Default: 1).
-- **Data Handling**:
-  - **Posts List**: Render the `data.posts` array.
-  - **Ads Injection**:
-    - The API returns `data.ads` separately.
-    - **Frontend Logic**: Insert one Ad card into the list after every 4-5 posts.
-    - **Ad Card**: Show `sponsorName` badge, `headline` (title), and `buttonText`.
+- **Response (200 OK)**:
+  ```json
+  {
+      "status": 200,
+      "data": {
+          "posts": [
+              {
+                  "id": "10",
+                  "userId": "5",
+                  "headline": "Road Broken",
+                  "description": "Fix this please",
+                  "imageUrls": ["http://.../img.jpg"],
+                  "category": "PROBLEM",
+                  "upvotes": 10,
+                  "downvotes": 2,
+                  "commentsCount": 0,
+                  "createdAt": "2025-12-15T12:00:00Z",
+                  "hasUpvoted": true,
+                  "hasDownvoted": false
+              }
+          ],
+          "ads": [
+              {
+                  "id": "55",
+                  "title": "Nike Sale",
+                  "description": "50% Off",
+                  "imageUrls": ["http://.../ad.jpg"],
+                  "buttonText": "Shop Now",
+                  "buttonUrl": "https://nike.com",
+                  "sponsorName": "Nike Local"
+              }
+          ]
+      }
+  }
+  ```
+- **Frontend Logic**:
+  - Render `data.posts` as the main list.
+  - Inject one item from `data.ads` after every 4-5 posts using your local list adapter.
 
 ---
 
 ## ✏️ 3. Create Post
-- **Screen**: Floating Action Button -> New Post Form
-- **Fields**:
-  - **Category**: Dropdown (`NEWS`, `UPDATE`, `PROBLEM`, `ADVERTISEMENT`)
-  - **Headline**: Optional text.
-  - **Description**: Required text.
-  - **Images**: Picker (Max 10).
-- **Validation**:
-  - ⚠️ If Category is **PROBLEM**, at least **one image is MANDATORY**.
+- **Screen**: New Post Form
 - **Action**: `POST /api/posts/`
 - **Format**: `multipart/form-data`
+- **Validation**:
+  - `category` (Required): `NEWS`, `UPDATE`, `PROBLEM`, `ADVERTISEMENT`
+  - `description` (Required)
+  - `images` (List of Files): **Mandatory** if category is `PROBLEM`.
+- **Request Body (Form Data)**:
+  - `category`: "PROBLEM"
+  - `headline`: "Broken Pipe"
+  - `description`: "Water everywhere"
+  - `images`: [File1, File2]
+- **Response (201 Created)**:
+  ```json
+  {
+      "status": 201,
+      "data": {
+          "id": "12",
+          "userId": "1",
+          "headline": "Broken Pipe",
+          "category": "PROBLEM",
+          ...
+      }
+  }
+  ```
 
 ---
 
 ## 👍 4. Post Interactions
+
 ### Voting
-- **UI**: Up arrow (Upvote), Down arrow (Downvote).
-- **State**: Check `hasUpvoted` / `hasDownvoted` to color icons (e.g., Orange/Blue).
 - **Actions**:
   - **Upvote**: `POST /api/posts/{id}/upvote/`
   - **Downvote**: `POST /api/posts/{id}/downvote/`
-- **Logic**: Backend handles toggling. Just call the API and update the local count/state from the response.
+- **Response (200 OK)**:
+  ```json
+  {
+      "status": 200,
+      "data": {
+          "upvotes": 11,
+          "downvotes": 2,
+          "hasUpvoted": true,
+          "hasDownvoted": false
+      }
+  }
+  ```
+- **Logic**: Backend handles toggling. Just call API and update UI with returned counts/colors.
 
-### Edit / Delete
-- **Visibility**: Only show Edit/Delete buttons if `userId` matches the logged-in user's ID.
-- **Edit**: `PUT /api/posts/{id}/` (Send full data).
-- **Delete**: `DELETE /api/posts/{id}/`.
+### Edit Post
+- **Action**: `PUT /api/posts/{id}/` (Multipart)
+- **Request**:
+  - `headline`: "Updated Title"
+  - `description`: "Updated Desc"
+  - `images`: [New Files] (Replaces old images entirely if sent)
+- **Response**: Returns updated Post object (Same as Create).
+
+### Delete Post
+- **Action**: `DELETE /api/posts/{id}/`
+- **Response (200 OK)**:
+  ```json
+  {
+      "status": 200,
+      "message": "Post deleted successfully"
+  }
+  ```
 
 ---
 
@@ -77,16 +162,16 @@ This guide defines the integration points for the Flutter Frontend using the Dja
 {
   "id": "1",
   "userId": "5",
-  "userLocalBody": "Name of User",
-  "category": "PROBLEM",
   "headline": "Road Broken",
   "description": "Details here...",
   "imageUrls": ["http://.../img.jpg"],
+  "category": "PROBLEM",
   "upvotes": 10,
   "downvotes": 2,
+  "commentsCount": 5,
+  "createdAt": "2025-12-15T...",
   "hasUpvoted": true,
-  "hasDownvoted": false,
-  "createdAt": "2025-12-15T..."
+  "hasDownvoted": false
 }
 ```
 
@@ -95,9 +180,10 @@ This guide defines the integration points for the Flutter Frontend using the Dja
 {
   "id": "5",
   "title": "Buy Shoes",
+  "description": "Best shoes ever",
   "sponsorName": "Nike Local",
   "buttonText": "Shop Now",
   "buttonUrl": "https://nike.com",
-  "imageUrls": ["..."]
+  "imageUrls": ["http://.../ad.jpg"]
 }
 ```
