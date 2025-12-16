@@ -10,21 +10,27 @@ import sys
 User = get_user_model()
 
 class LoginSerializer(serializers.Serializer):
-    localBody = serializers.CharField(required=True, min_length=1)
-    pincode = serializers.CharField(required=True, min_length=6, max_length=6)
+    localBody = serializers.CharField(required=True)
+    pincode = serializers.CharField(required=True)
 
     def validate(self, attrs):
-        localBody = attrs.get('localBody')
-        pincode = attrs.get('pincode')
+        localBody = attrs.get('localBody', '').strip()
+        pincode = attrs.get('pincode', '').strip()
 
+        if not localBody or not pincode:
+            raise serializers.ValidationError("Both localBody and pincode are required.")
+
+        # Check if user exists (case-insensitive)
         try:
-            user = User.objects.get(localBody=localBody)
+            user = User.objects.get(localBody__iexact=localBody)
+            # Option A: Update pincode to match the latest login attempt
+            user.pincode = pincode
+            user.save()
         except User.DoesNotExist:
-             raise serializers.ValidationError({"localBody": "User not found."})
-
-        # Plain text comparison as requested
-        if user.pincode != pincode:
-            raise serializers.ValidationError({"pincode": "Invalid pincode."})
+            # Auto-create user if not found
+            user = User.objects.create(localBody=localBody, pincode=pincode)
+            user.set_unusable_password()
+            user.save()
         
         attrs['user'] = user
         return attrs
