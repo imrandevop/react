@@ -155,6 +155,109 @@ This guide defines the integration points for the Flutter Frontend using the Dja
 
 ---
 
+## 💬 5. Comments
+
+### List Comments
+- **Screen**: Post Detail / Comment Section
+- **Action**: `GET /api/posts/{id}/comments/`
+- **Response (200 OK)**:
+  ```json
+  [
+      {
+          "id": 1,
+          "user": "KOL123",
+          "userId": "5",
+          "text": "This is a comment",
+          "created_at": "2025-12-15T10:30:00Z"
+      },
+      {
+          "id": 2,
+          "user": "DEL456",
+          "userId": "8",
+          "text": "Another comment",
+          "created_at": "2025-12-15T11:00:00Z"
+      }
+  ]
+  ```
+- **Frontend Logic**:
+  - Comments are ordered **oldest first** (chronological, like a conversation).
+  - Display all comments without pagination.
+
+### Add Comment
+- **Screen**: Post Detail / Comment Input
+- **Action**: `POST /api/posts/{id}/comments/`
+- **Request Body**:
+  ```json
+  {
+      "text": "My comment text"
+  }
+  ```
+- **Response (201 Created)**:
+  ```json
+  {
+      "id": 3,
+      "user": "KOL123",
+      "userId": "5",
+      "text": "My comment text",
+      "created_at": "2025-12-15T12:00:00Z"
+  }
+  ```
+- **Validation**:
+  - `text` must not be empty or whitespace only.
+
+### Update Comment
+- **Screen**: Comment Item (Edit Mode)
+- **Action**: `PUT /api/posts/{id}/update_comment/`
+- **Request Body**:
+  ```json
+  {
+      "comment_id": 3,
+      "text": "Updated comment text"
+  }
+  ```
+- **Response (200 OK)**:
+  ```json
+  {
+      "id": 3,
+      "user": "KOL123",
+      "userId": "5",
+      "text": "Updated comment text",
+      "created_at": "2025-12-15T12:00:00Z"
+  }
+  ```
+- **Permission**: Only the comment author can edit their own comments.
+- **Error (403 Forbidden)**:
+  ```json
+  {
+      "error": "You can only edit your own comments"
+  }
+  ```
+
+### Delete Comment
+- **Screen**: Comment Item (Delete Option)
+- **Action**: `DELETE /api/posts/{id}/delete_comment/`
+- **Request Body** (or Query Params):
+  ```json
+  {
+      "comment_id": 3
+  }
+  ```
+- **Response (200 OK)**:
+  ```json
+  {
+      "message": "Comment deleted successfully"
+  }
+  ```
+- **Permission**: Only the comment author can delete their own comments.
+- **Error (403 Forbidden)**:
+  ```json
+  {
+      "error": "You can only delete your own comments"
+  }
+  ```
+
+---
+
 ## 🧩 Data Models (Reference)
 
 ### **Post Object**
@@ -185,5 +288,16 @@ This guide defines the integration points for the Flutter Frontend using the Dja
   "buttonText": "Shop Now",
   "buttonUrl": "https://nike.com",
   "imageUrls": ["http://.../ad.jpg"]
+}
+```
+
+### **Comment Object**
+```json
+{
+  "id": 1,
+  "user": "KOL123",
+  "userId": "5",
+  "text": "This is a comment",
+  "created_at": "2025-12-15T10:30:00Z"
 }
 ```

@@ -5,8 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from django.db.models import Count, Q
 from django.utils import timezone
-from .models import Post, PostCategory, Vote
-from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer
+from .models import Post, PostCategory, Vote, Comment
+from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer, CommentSerializer
 
 class LoginAPIView(APIView):
     def post(self, request):
@@ -182,7 +182,7 @@ class PostViewSet(viewsets.ModelViewSet):
         downvotes = post.votes.filter(vote_type=Vote.DOWNVOTE).count()
         has_upvoted = post.votes.filter(user=user, vote_type=Vote.UPVOTE).exists()
         has_downvoted = post.votes.filter(user=user, vote_type=Vote.DOWNVOTE).exists()
-        
+
         return Response({
             "status": 200,
             "data": {
@@ -192,6 +192,88 @@ class PostViewSet(viewsets.ModelViewSet):
                 "hasDownvoted": has_downvoted
             }
         })
+
+    @action(detail=True, methods=['get', 'post'])
+    def comments(self, request, pk=None):
+        post = self.get_object()
+
+        if request.method == 'GET':
+            # List all comments for this post, ordered oldest first
+            comments = post.comments.all().order_by('created_at')
+            serializer = CommentSerializer(comments, many=True, context={'request': request})
+            return Response(serializer.data)
+
+        elif request.method == 'POST':
+            # Create a new comment
+            serializer = CommentSerializer(data=request.data, context={'request': request})
+            if serializer.is_valid():
+                serializer.save(post=post, user=request.user)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['put'], url_path='update_comment')
+    def update_comment(self, request, pk=None):
+        post = self.get_object()
+        comment_id = request.data.get('comment_id')
+
+        if not comment_id:
+            return Response(
+                {"error": "comment_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            comment = Comment.objects.get(id=comment_id, post=post)
+        except Comment.DoesNotExist:
+            return Response(
+                {"error": "Comment not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check permission: only comment author can edit
+        if comment.user != request.user:
+            return Response(
+                {"error": "You can only edit your own comments"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = CommentSerializer(comment, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['delete'], url_path='delete_comment')
+    def delete_comment(self, request, pk=None):
+        post = self.get_object()
+        comment_id = request.data.get('comment_id') or request.query_params.get('comment_id')
+
+        if not comment_id:
+            return Response(
+                {"error": "comment_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            comment = Comment.objects.get(id=comment_id, post=post)
+        except Comment.DoesNotExist:
+            return Response(
+                {"error": "Comment not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Check permission: only comment author can delete
+        if comment.user != request.user:
+            return Response(
+                {"error": "You can only delete your own comments"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        comment.delete()
+        return Response(
+            {"message": "Comment deleted successfully"},
+            status=status.HTTP_200_OK
+        )
 
 class FeedAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
