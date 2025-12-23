@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.pagination import PageNumberPagination, CursorPagination
 from django.db.models import Count, Q
 from django.utils import timezone
 from .models import Post, PostCategory, Vote, Comment
@@ -39,6 +39,13 @@ class LoginAPIView(APIView):
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 20
+    page_size_query_param = 'limit'
+    max_page_size = 100
+
+class FeedCursorPagination(CursorPagination):
+    page_size = 20
+    ordering = '-created_at'  # Default ordering for cursor
+    cursor_query_param = 'cursor'
     page_size_query_param = 'limit'
     max_page_size = 100
 
@@ -278,23 +285,35 @@ class PostViewSet(viewsets.ModelViewSet):
 
 class FeedAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get(self, request):
         tab = request.query_params.get('tab')
         if not tab:
              return Response({"status": 400, "message": "Tab parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
-             
+
         valid_tabs = ["All", "Today", "Problems", "Updates", "Yours"]
         # Case insensitive check matching
         tab_mapped = next((t for t in valid_tabs if t.lower() == tab.lower()), None)
-        
+
         if not tab_mapped:
              return Response({"status": 400, "message": "Invalid feed tab"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         user = request.user
-        
-        # Base Filter: Pincode Isolation
-        queryset = Post.objects.filter(pincode=user.pincode)
+
+        # Base Filter: Locality/Pincode with Priority
+        # Priority: pincode > localBody > user's pincode
+        pincode_param = request.query_params.get('pincode')
+        localbody_param = request.query_params.get('localBody')
+
+        if pincode_param:
+            # Highest priority: filter by pincode parameter
+            queryset = Post.objects.filter(pincode=pincode_param)
+        elif localbody_param:
+            # Second priority: filter by localBody parameter
+            queryset = Post.objects.filter(localBody=localbody_param)
+        else:
+            # Default: filter by user's pincode
+            queryset = Post.objects.filter(pincode=user.pincode)
         
         # Filter out ADVERTISEMENTS from main post stream (as discussed)
         queryset = queryset.exclude(category=PostCategory.ADVERTISEMENT)
@@ -327,32 +346,43 @@ class FeedAPIView(APIView):
         elif tab_mapped == "Yours":
              queryset = queryset.filter(user=user).order_by('-created_at')
 
-        # Pagination
-        paginator = StandardResultsSetPagination()
+        # Cursor-based Pagination
+        paginator = FeedCursorPagination()
         page = paginator.paginate_queryset(queryset, request)
-        
-        post_serializer = PostSerializer(page, many=True, context={'request': request})
-        
-        # Ads Retrieval (Separate List)
-        # "Ads appear in all tabs"
-        # "Only admin-approved ADVERTISEMENT posts"
-        ads_queryset = Post.objects.filter(
-            pincode=user.pincode, # Ads also hyperlocal? Assuming yes based on "All feed endpoints... Filter posts strictly by user.pincode"
-            category=PostCategory.ADVERTISEMENT,
-            is_ad_approved=True
-        ).order_by('-created_at') # Order doesn't matter much as frontend decides placement, but newest ads first is good
-        
-        # Limit number of ads returned? Prompt says "Returned separately... Ads appear in all tabs", 
-        # doesn't specify limit. I'll return all available valid ads for the client to intersperse. 
-        # Or maybe limit to reasonable number (e.g. 5) to save bandwidth.
-        # Given "Frontend decides placement", I'll return a reasonable batch.
-        ads_serializer = AdSerializer(ads_queryset[:10], many=True, context={'request': request})
-        
+
+        if page is not None:
+            post_serializer = PostSerializer(page, many=True, context={'request': request})
+
+            # Ads Retrieval (Separate List)
+            # Use same locality filter as posts for ads
+            if pincode_param:
+                ads_queryset = Post.objects.filter(pincode=pincode_param, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
+            elif localbody_param:
+                ads_queryset = Post.objects.filter(localBody=localbody_param, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
+            else:
+                ads_queryset = Post.objects.filter(pincode=user.pincode, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
+
+            ads_queryset = ads_queryset.order_by('-created_at')
+            ads_serializer = AdSerializer(ads_queryset[:10], many=True, context={'request': request})
+
+            # Get paginated response with cursor links
+            response = paginator.get_paginated_response(post_serializer.data)
+
+            # Add ads to the response data
+            response.data['ads'] = ads_serializer.data
+
+            return Response({
+                "status": 200,
+                "data": response.data
+            })
+
+        # Fallback (shouldn't happen with cursor pagination)
+        post_serializer = PostSerializer(queryset, many=True, context={'request': request})
         return Response({
             "status": 200,
             "data": {
                 "posts": post_serializer.data,
-                "ads": ads_serializer.data
+                "ads": []
             }
         }) 
 
@@ -364,18 +394,31 @@ class FeedRefreshAPIView(APIView):
         tab = request.query_params.get('tab')
         if not tab:
              return Response({"status": 400, "message": "Tab parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         # Reuse logic? Or copy-paste for simplicity/independence.
         # "Returns latest posts based on tab... No pagination required"
-        
+
         valid_tabs = ["All", "Today", "Problems", "Updates", "Yours"]
         tab_mapped = next((t for t in valid_tabs if t.lower() == tab.lower()), None)
-        
+
         if not tab_mapped:
              return Response({"status": 400, "message": "Invalid feed tab"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
         user = request.user
-        queryset = Post.objects.filter(pincode=user.pincode).exclude(category=PostCategory.ADVERTISEMENT)
+
+        # Base Filter: Locality/Pincode with Priority
+        # Priority: pincode > localBody > user's pincode
+        pincode_param = request.query_params.get('pincode')
+        localbody_param = request.query_params.get('localBody')
+
+        if pincode_param:
+            queryset = Post.objects.filter(pincode=pincode_param)
+        elif localbody_param:
+            queryset = Post.objects.filter(localBody=localbody_param)
+        else:
+            queryset = Post.objects.filter(pincode=user.pincode)
+
+        queryset = queryset.exclude(category=PostCategory.ADVERTISEMENT)
         
         if tab_mapped == "All":
              queryset = queryset.annotate(upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))).order_by('-upvote_count', '-created_at')
