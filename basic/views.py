@@ -14,13 +14,14 @@ class LoginAPIView(APIView):
         if serializer.is_valid():
             user = serializer.validated_data['user']
             tokens = serializer.get_token(user)
-            
+
             return Response({
                 "status": 200,
                 "data": {
                     "token": tokens['access'],
                     "user": {
                         "id": str(user.id),
+                        "userId": str(user.userId),
                         "localBody": user.localBody,
                         "pincode": user.pincode
                     }
