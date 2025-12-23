@@ -344,8 +344,8 @@ class FeedAPIView(APIView):
             # Highest priority: filter by pincode parameter
             queryset = Post.objects.filter(pincode=pincode_param)
         elif localbody_param:
-            # Second priority: filter by localBody parameter
-            queryset = Post.objects.filter(localBody=localbody_param)
+            # Second priority: filter by localBody parameter (through user relationship)
+            queryset = Post.objects.filter(user__localBody=localbody_param)
         else:
             # Default: filter by user's pincode
             queryset = Post.objects.filter(pincode=user.pincode)
@@ -393,7 +393,7 @@ class FeedAPIView(APIView):
             if pincode_param:
                 ads_queryset = Post.objects.filter(pincode=pincode_param, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
             elif localbody_param:
-                ads_queryset = Post.objects.filter(localBody=localbody_param, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
+                ads_queryset = Post.objects.filter(user__localBody=localbody_param, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
             else:
                 ads_queryset = Post.objects.filter(pincode=user.pincode, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
 
@@ -449,7 +449,7 @@ class FeedRefreshAPIView(APIView):
         if pincode_param:
             queryset = Post.objects.filter(pincode=pincode_param)
         elif localbody_param:
-            queryset = Post.objects.filter(localBody=localbody_param)
+            queryset = Post.objects.filter(user__localBody=localbody_param)
         else:
             queryset = Post.objects.filter(pincode=user.pincode)
 
