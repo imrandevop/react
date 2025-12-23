@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Post, PostImage, PostCategory, Vote, Comment
+from .models import Post, PostImage, PostCategory, Vote, Comment, PostReport
 from PIL import Image
 from io import BytesIO
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -85,6 +85,23 @@ class CommentSerializer(serializers.ModelSerializer):
     def validate_text(self, value):
         if not value or not value.strip():
             raise serializers.ValidationError("Comment text cannot be empty.")
+        return value.strip()
+
+class PostReportSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+    userId = serializers.CharField(source='user.id', read_only=True)
+
+    class Meta:
+        model = PostReport
+        fields = ['id', 'user', 'userId', 'description', 'status', 'created_at']
+        read_only_fields = ['id', 'user', 'userId', 'status', 'created_at']
+
+    def get_user(self, obj):
+        return obj.user.localBody
+
+    def validate_description(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError("Report description cannot be empty.")
         return value.strip()
 
 class PostSerializer(serializers.ModelSerializer):

@@ -5,8 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination, CursorPagination
 from django.db.models import Count, Q
 from django.utils import timezone
-from .models import Post, PostCategory, Vote, Comment
-from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer, CommentSerializer
+from .models import Post, PostCategory, Vote, Comment, PostReport
+from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer, CommentSerializer, PostReportSerializer
 
 class LoginAPIView(APIView):
     def post(self, request):
@@ -282,6 +282,41 @@ class PostViewSet(viewsets.ModelViewSet):
             {"message": "Comment deleted successfully"},
             status=status.HTTP_200_OK
         )
+
+    @action(detail=True, methods=['post'])
+    def report(self, request, pk=None):
+        post = self.get_object()
+        user = request.user
+
+        # Check if user has already reported this post
+        if PostReport.objects.filter(post=post, user=user).exists():
+            return Response({
+                "status": 400,
+                "message": "You have already reported this post"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Create the report
+        serializer = PostReportSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save(post=post, user=user)
+
+            # Get total report count for this post
+            report_count = post.reports.count()
+
+            return Response({
+                "status": 201,
+                "data": {
+                    "message": "Post reported successfully",
+                    "report": serializer.data,
+                    "total_reports": report_count
+                }
+            }, status=status.HTTP_201_CREATED)
+
+        return Response({
+            "status": 400,
+            "message": "Failed to report post",
+            "errors": serializer.errors
+        }, status=status.HTTP_400_BAD_REQUEST)
 
 class FeedAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]

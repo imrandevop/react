@@ -95,3 +95,22 @@ class Comment(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+class ReportStatus(models.TextChoices):
+    PENDING = "PENDING", "Pending"
+    REVIEWED = "REVIEWED", "Reviewed"
+    RESOLVED = "RESOLVED", "Resolved"
+
+class PostReport(models.Model):
+    post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='reports')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reports')
+    description = models.TextField()
+    status = models.CharField(max_length=20, choices=ReportStatus.choices, default=ReportStatus.PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('post', 'user')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Report by {self.user.localBody} on Post {self.post.id}"
