@@ -482,3 +482,21 @@ class FeedRefreshAPIView(APIView):
                 "posts": serializer.data
             }
         })
+
+class DeleteAccountAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request):
+        user = request.user
+        user_id = str(user.id)
+
+        # Delete the user (CASCADE will delete all related posts, comments, votes, reports, etc.)
+        user.delete()
+
+        return Response({
+            "status": 200,
+            "message": "Account deleted successfully",
+            "data": {
+                "userId": user_id
+            }
+        }, status=status.HTTP_200_OK)
