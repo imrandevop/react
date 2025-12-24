@@ -71,10 +71,22 @@ class Post(models.Model):
 
 class PostImage(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='images')
-    image = models.ImageField(upload_to='post_images/')
+    # Support both local file uploads (backward compatibility) and Supabase URLs
+    image = models.ImageField(upload_to='post_images/', null=True, blank=True)
+    image_url = models.URLField(max_length=500, null=True, blank=True)
 
     def __str__(self):
         return f"Image for Post {self.post.id}"
+    
+    def get_image_url(self, request=None):
+        """Get the image URL - either from Supabase or local media"""
+        if self.image_url:
+            return self.image_url
+        elif self.image:
+            if request:
+                return request.build_absolute_uri(self.image.url)
+            return self.image.url
+        return None
 
 class Vote(models.Model):
     UPVOTE = 1

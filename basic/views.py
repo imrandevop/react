@@ -500,3 +500,44 @@ class DeleteAccountAPIView(APIView):
                 "userId": user_id
             }
         }, status=status.HTTP_200_OK)
+
+class GenerateUploadURLAPIView(APIView):
+    """
+    Generate signed upload URL for Supabase Storage
+    Flutter app will use this to upload images directly to Supabase
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from .supabase_storage import generate_signed_upload_url, generate_unique_filename
+        
+        filename = request.data.get('filename')
+        content_type = request.data.get('content_type', 'image/jpeg')
+        
+        if not filename:
+            return Response({
+                "status": 400,
+                "message": "filename is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            # Generate unique file path
+            file_path = generate_unique_filename(filename, prefix="posts")
+            
+            # Generate signed upload URL
+            upload_data = generate_signed_upload_url(file_path)
+            
+            return Response({
+                "status": 200,
+                "data": {
+                    "upload_url": upload_data['signed_url'],
+                    "file_path": upload_data['file_path'],
+                    "public_url": upload_data['public_url'],
+                    "expires_in": upload_data.get('expires_in', 3600)
+                }
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "status": 500,
+                "message": f"Failed to generate upload URL: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

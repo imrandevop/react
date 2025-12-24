@@ -125,10 +125,10 @@ class PostSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         urls = []
         for img in obj.images.all():
-            if request:
-                urls.append(request.build_absolute_uri(img.image.url))
-            else:
-                urls.append(img.image.url)
+            # Use the model's get_image_url method which handles both Supabase URLs and local files
+            img_url = img.get_image_url(request)
+            if img_url:
+                urls.append(img_url)
         return urls
 
     def get_upvotes(self, obj):
@@ -153,8 +153,15 @@ class PostSerializer(serializers.ModelSerializer):
         return False
 
 class PostCreateUpdateSerializer(serializers.ModelSerializer):
+    # Support file-based upload (backward compatibility)
     images = serializers.ListField(
         child=serializers.ImageField(max_length=10000000, allow_empty_file=False, use_url=False),
+        write_only=True,
+        required=False
+    )
+    # Support URL-based upload (new Supabase flow)
+    image_urls = serializers.ListField(
+        child=serializers.URLField(),
         write_only=True,
         required=False
     )
@@ -162,44 +169,64 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['category', 'headline', 'description', 'images']
+        fields = ['category', 'headline', 'description', 'images', 'image_urls']
 
     def validate(self, attrs):
         category = attrs.get('category')
         images = attrs.get('images', [])
+        image_urls = attrs.get('image_urls', [])
 
-        if self.instance is None: # Create
-            if category == PostCategory.PROBLEM and not images:
-                raise serializers.ValidationError({"images": "At least one image is required for PROBLEM category."})
+        if self.instance is None:  # Create
+            # For PROBLEM category, require at least one image (either file or URL)
+            if category == PostCategory.PROBLEM and not images and not image_urls:
+                raise serializers.ValidationError({
+                    "images": "At least one image is required for PROBLEM category."
+                })
         
         return attrs
 
     def create(self, validated_data):
         images_data = validated_data.pop('images', [])
+        image_urls_data = validated_data.pop('image_urls', [])
         user = self.context['request'].user
         pincode = user.pincode
         
         post = Post.objects.create(user=user, pincode=pincode, **validated_data)
         
+        # Handle file-based uploads (backward compatibility)
         for image_data in images_data:
             processed_image = process_image(image_data)
             PostImage.objects.create(post=post, image=processed_image)
+        
+        # Handle URL-based uploads (new Supabase flow)
+        for image_url in image_urls_data:
+            PostImage.objects.create(post=post, image_url=image_url)
             
         return post
 
     def update(self, instance, validated_data):
         images_data = validated_data.pop('images', None)
+        image_urls_data = validated_data.pop('image_urls', None)
         
         instance.headline = validated_data.get('headline', instance.headline)
         instance.description = validated_data.get('description', instance.description)
         instance.save()
 
-        if images_data is not None:
+        # If either images or image_urls is provided, replace all images
+        if images_data is not None or image_urls_data is not None:
             # Replace images fully
             instance.images.all().delete()
-            for image_data in images_data:
-                processed_image = process_image(image_data)
-                PostImage.objects.create(post=instance, image=processed_image)
+            
+            # Handle file-based uploads
+            if images_data:
+                for image_data in images_data:
+                    processed_image = process_image(image_data)
+                    PostImage.objects.create(post=instance, image=processed_image)
+            
+            # Handle URL-based uploads
+            if image_urls_data:
+                for image_url in image_urls_data:
+                    PostImage.objects.create(post=instance, image_url=image_url)
         
         return instance
 
@@ -218,8 +245,8 @@ class AdSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         urls = []
         for img in obj.images.all():
-             if request:
-                urls.append(request.build_absolute_uri(img.image.url))
-             else:
-                urls.append(img.image.url)
+            # Use the model's get_image_url method which handles both Supabase URLs and local files
+            img_url = img.get_image_url(request)
+            if img_url:
+                urls.append(img_url)
         return urls
