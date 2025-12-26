@@ -55,6 +55,10 @@ class PostViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+        # Allow voting on any post, not just from user's pincode
+        if self.action in ['upvote', 'downvote', 'comments', 'update_comment', 'delete_comment', 'report']:
+            return Post.objects.all()
+        # For listing and other actions, filter by pincode
         queryset = Post.objects.filter(pincode=user.pincode)
         return queryset
 
