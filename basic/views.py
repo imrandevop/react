@@ -476,17 +476,28 @@ class FeedRefreshAPIView(APIView):
              
         # "No pagination required" - limiting to 20 for safety as agreed
         queryset = queryset[:20]
-        
+
         serializer = PostSerializer(queryset, many=True, context={'request': request})
-        
-        # Doc doesn't say "ads" in refresh response, but usually refresh implies full view update.
-        # "Returns latest posts" -> implies just posts. 
-        # I will return just posts data wrapped.
-        
+
+        # Ads Retrieval (Separate List) - same locality filter as posts
+        if pincode_param:
+            ads_queryset = Post.objects.filter(pincode=pincode_param, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
+        elif localbody_param:
+            ads_queryset = Post.objects.filter(user__localBody=localbody_param, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
+        else:
+            ads_queryset = Post.objects.filter(pincode=user.pincode, category=PostCategory.ADVERTISEMENT, is_ad_approved=True)
+
+        ads_queryset = ads_queryset.order_by('-created_at')
+        ads_serializer = AdSerializer(ads_queryset[:10], many=True, context={'request': request})
+
+        # Return structure matching /feed API for client compatibility
         return Response({
             "status": 200,
             "data": {
-                "posts": serializer.data
+                "next": None,
+                "previous": None,
+                "results": serializer.data,
+                "ads": ads_serializer.data
             }
         })
 
