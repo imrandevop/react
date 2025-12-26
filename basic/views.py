@@ -55,8 +55,8 @@ class PostViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
-        # Allow voting on any post, not just from user's pincode
-        if self.action in ['upvote', 'downvote', 'comments', 'update_comment', 'delete_comment', 'report']:
+        # Allow voting and viewing any post, not just from user's pincode
+        if self.action in ['retrieve', 'upvote', 'downvote', 'comments', 'update_comment', 'delete_comment', 'report']:
             return Post.objects.all()
         # For listing and other actions, filter by pincode
         queryset = Post.objects.filter(pincode=user.pincode)
@@ -213,7 +213,10 @@ class PostViewSet(viewsets.ModelViewSet):
             # List all comments for this post, ordered oldest first
             comments = post.comments.all().order_by('created_at')
             serializer = CommentSerializer(comments, many=True, context={'request': request})
-            return Response(serializer.data)
+            return Response({
+                "status": 200,
+                "data": serializer.data
+            })
 
         elif request.method == 'POST':
             # Create a new comment

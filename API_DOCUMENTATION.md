@@ -446,22 +446,25 @@ images: [file1.jpg, file2.jpg]  // Optional if using image_urls
 
 **Success Response (200 OK):**
 ```json
-[
-  {
-    "id": 1,
-    "user": "Kozhikode",
-    "userId": "1",
-    "text": "This is a serious issue that needs immediate attention!",
-    "created_at": "2025-12-26T06:25:30.123456Z"
-  },
-  {
-    "id": 2,
-    "user": "Kozhikode",
-    "userId": "2",
-    "text": "I agree, the authorities should fix this soon.",
-    "created_at": "2025-12-26T06:30:15.654321Z"
-  }
-]
+{
+  "status": 200,
+  "data": [
+    {
+      "id": 1,
+      "user": "Kozhikode",
+      "userId": "1",
+      "text": "This is a serious issue that needs immediate attention!",
+      "created_at": "2025-12-26T06:25:30.123456Z"
+    },
+    {
+      "id": 2,
+      "user": "Kozhikode",
+      "userId": "2",
+      "text": "I agree, the authorities should fix this soon.",
+      "created_at": "2025-12-26T06:30:15.654321Z"
+    }
+  ]
+}
 ```
 
 ---
