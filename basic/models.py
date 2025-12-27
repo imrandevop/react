@@ -77,8 +77,7 @@ class Post(models.Model):
         Calculate Reddit-style hot score
         Combines upvotes/downvotes with time decay
         """
-        from django.utils import timezone
-        from django.db.models import Count, Q
+        from django.utils.timezone import UTC
         import math
         from datetime import datetime
 
@@ -98,7 +97,7 @@ class Post(models.Model):
             sign = 0
 
         # Epoch time: seconds since a reference point
-        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        epoch = datetime(1970, 1, 1, tzinfo=UTC)
         seconds = (self.created_at - epoch).total_seconds() - 1134028003
 
         # Calculate and return hot score
