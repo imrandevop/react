@@ -43,9 +43,18 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size_query_param = 'limit'
     max_page_size = 100
 
-class FeedCursorPagination(CursorPagination):
+class FeedNewestCursorPagination(CursorPagination):
+    """Instagram-style: Newest first"""
     page_size = 20
-    ordering = '-created_at'  # Default ordering for cursor
+    ordering = '-created_at'
+    cursor_query_param = 'cursor'
+    page_size_query_param = 'limit'
+    max_page_size = 100
+
+class FeedHotCursorPagination(CursorPagination):
+    """Reddit-style: Hot score (for Today tab only)"""
+    page_size = 20
+    ordering = '-hot_score'
     cursor_query_param = 'cursor'
     page_size_query_param = 'limit'
     max_page_size = 100
@@ -77,9 +86,12 @@ class PostViewSet(viewsets.ModelViewSet):
                 "message": "Failed to create post",
                 "errors": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         self.perform_create(serializer)
-        
+
+        # Calculate initial hot score for new post
+        serializer.instance.update_hot_score()
+
         read_serializer = PostSerializer(serializer.instance, context={'request': request})
         return Response({
             "status": 201,
@@ -134,23 +146,16 @@ class PostViewSet(viewsets.ModelViewSet):
         filter_param = self.request.query_params.get('filter')
         if filter_param == 'TODAY':
             now = timezone.now()
-            queryset = queryset.filter(created_at__date=now.date()).annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
+            queryset = queryset.filter(created_at__date=now.date()).order_by('-hot_score', '-created_at')
         elif filter_param == 'PROBLEMS':
-            queryset = queryset.filter(category=PostCategory.PROBLEM).annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
+            queryset = queryset.filter(category=PostCategory.PROBLEM).order_by('-created_at')
         elif filter_param == 'UPDATES':
-            queryset = queryset.filter(category=PostCategory.UPDATE).annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
+            queryset = queryset.filter(category=PostCategory.UPDATE).order_by('-created_at')
         elif filter_param == 'YOURS':
             queryset = queryset.filter(user=request.user).order_by('-created_at')
         else:
-             queryset = queryset.annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
+            # Default: Instagram-style newest first
+            queryset = queryset.order_by('-created_at')
 
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -167,7 +172,7 @@ class PostViewSet(viewsets.ModelViewSet):
     def upvote(self, request, pk=None):
         post = self.get_object()
         user = request.user
-        
+
         try:
             vote = Vote.objects.get(post=post, user=user)
             if vote.vote_type == Vote.UPVOTE:
@@ -177,14 +182,17 @@ class PostViewSet(viewsets.ModelViewSet):
                 vote.save()
         except Vote.DoesNotExist:
             Vote.objects.create(post=post, user=user, vote_type=Vote.UPVOTE)
-            
+
+        # Update hot score after vote change
+        post.update_hot_score()
+
         return self._vote_response(post, user)
 
     @action(detail=True, methods=['post'])
     def downvote(self, request, pk=None):
         post = self.get_object()
         user = request.user
-        
+
         try:
             vote = Vote.objects.get(post=post, user=user)
             if vote.vote_type == Vote.DOWNVOTE:
@@ -194,7 +202,10 @@ class PostViewSet(viewsets.ModelViewSet):
                 vote.save()
         except Vote.DoesNotExist:
             Vote.objects.create(post=post, user=user, vote_type=Vote.DOWNVOTE)
-            
+
+        # Update hot score after vote change
+        post.update_hot_score()
+
         return self._vote_response(post, user)
 
     def _vote_response(self, post, user):
@@ -367,37 +378,33 @@ class FeedAPIView(APIView):
         
         # Filter out ADVERTISEMENTS from main post stream (as discussed)
         queryset = queryset.exclude(category=PostCategory.ADVERTISEMENT)
-        
+
         # Tab Logic
-        # Common Sorting: Highest Upvotes, then Newest
-        # Except 'Yours' which is Newest First
-        
+        # "Today" tab: Reddit-style hot score (upvotes + time decay)
+        # All other tabs: Instagram-style newest first
+
         if tab_mapped == "All":
-             queryset = queryset.annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
-            
+            queryset = queryset.order_by('-created_at')
+            paginator = FeedNewestCursorPagination()
+
         elif tab_mapped == "Today":
-             now = timezone.now()
-             queryset = queryset.filter(created_at__date=now.date()).annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
-             
+            now = timezone.now()
+            queryset = queryset.filter(created_at__date=now.date()).order_by('-hot_score', '-created_at')
+            paginator = FeedHotCursorPagination()
+
         elif tab_mapped == "Problems":
-             queryset = queryset.filter(category=PostCategory.PROBLEM).annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
-             
+            queryset = queryset.filter(category=PostCategory.PROBLEM).order_by('-created_at')
+            paginator = FeedNewestCursorPagination()
+
         elif tab_mapped == "Updates":
-             queryset = queryset.filter(category=PostCategory.UPDATE).annotate(
-                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
-            ).order_by('-upvote_count', '-created_at')
-             
+            queryset = queryset.filter(category=PostCategory.UPDATE).order_by('-created_at')
+            paginator = FeedNewestCursorPagination()
+
         elif tab_mapped == "Yours":
-             queryset = queryset.filter(user=user).order_by('-created_at')
+            queryset = queryset.filter(user=user).order_by('-created_at')
+            paginator = FeedNewestCursorPagination()
 
         # Cursor-based Pagination
-        paginator = FeedCursorPagination()
         page = paginator.paginate_queryset(queryset, request)
 
         if page is not None:

@@ -60,7 +60,10 @@ class Post(models.Model):
     pincode = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
     is_ad_approved = models.BooleanField(default=False)
-    
+
+    # Hot score for Reddit-style ranking (higher = better)
+    hot_score = models.FloatField(default=0.0, db_index=True)
+
     # Ad specific fields
     sponsor_name = models.CharField(max_length=255, null=True, blank=True)
     button_text = models.CharField(max_length=50, null=True, blank=True)
@@ -68,6 +71,43 @@ class Post(models.Model):
 
     def __str__(self):
         return f"{self.user.localBody} - {self.category} - {self.id}"
+
+    def calculate_hot_score(self):
+        """
+        Calculate Reddit-style hot score
+        Combines upvotes/downvotes with time decay
+        """
+        from django.utils import timezone
+        from django.db.models import Count, Q
+        import math
+        from datetime import datetime
+
+        # Get vote counts
+        upvotes = self.votes.filter(vote_type=Vote.UPVOTE).count()
+        downvotes = self.votes.filter(vote_type=Vote.DOWNVOTE).count()
+        score = upvotes - downvotes
+
+        # Reddit's hot algorithm
+        order = math.log10(max(abs(score), 1))
+
+        if score > 0:
+            sign = 1
+        elif score < 0:
+            sign = -1
+        else:
+            sign = 0
+
+        # Epoch time: seconds since a reference point
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        seconds = (self.created_at - epoch).total_seconds() - 1134028003
+
+        # Calculate and return hot score
+        return round(sign * order + seconds / 45000, 7)
+
+    def update_hot_score(self):
+        """Update and save the hot score"""
+        self.hot_score = self.calculate_hot_score()
+        self.save(update_fields=['hot_score'])
 
 class PostImage(models.Model):
     post = models.ForeignKey(Post, on_delete=models.CASCADE, related_name='images')
