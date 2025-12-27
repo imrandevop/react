@@ -3,7 +3,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination, CursorPagination
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.parsers import JSONParser
 from django.db.models import Count, Q
 from django.utils import timezone
 from .models import Post, PostCategory, Vote, Comment, PostReport
@@ -53,7 +53,7 @@ class FeedCursorPagination(CursorPagination):
 class PostViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    parser_classes = [JSONParser]  # Only JSON for Supabase URLs
     
     def get_queryset(self):
         user = self.request.user
@@ -129,19 +129,25 @@ class PostViewSet(viewsets.ModelViewSet):
         # The prompt implies specialized logic for tabs.
         
         queryset = self.filter_queryset(self.get_queryset())
-        
+
         # Apply basic filtering if used as a backup
         filter_param = self.request.query_params.get('filter')
         if filter_param == 'TODAY':
             now = timezone.now()
-            queryset = queryset.filter(created_at__date=now.date()).order_by('-created_at')
+            queryset = queryset.filter(created_at__date=now.date()).annotate(
+                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
+            ).order_by('-upvote_count', '-created_at')
         elif filter_param == 'PROBLEMS':
-            queryset = queryset.filter(category=PostCategory.PROBLEM).order_by('-created_at')
+            queryset = queryset.filter(category=PostCategory.PROBLEM).annotate(
+                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
+            ).order_by('-upvote_count', '-created_at')
         elif filter_param == 'UPDATES':
-            queryset = queryset.filter(category=PostCategory.UPDATE).order_by('-created_at')
+            queryset = queryset.filter(category=PostCategory.UPDATE).annotate(
+                upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
+            ).order_by('-upvote_count', '-created_at')
         elif filter_param == 'YOURS':
             queryset = queryset.filter(user=request.user).order_by('-created_at')
-        else: 
+        else:
              queryset = queryset.annotate(
                 upvote_count=Count('votes', filter=Q(votes__vote_type=Vote.UPVOTE))
             ).order_by('-upvote_count', '-created_at')

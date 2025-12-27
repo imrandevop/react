@@ -2,11 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Post, PostImage, PostCategory, Vote, Comment, PostReport
-from PIL import Image
-from io import BytesIO
-from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.db import transaction
-import sys
 
 User = get_user_model()
 
@@ -46,35 +42,6 @@ class LoginSerializer(serializers.Serializer):
             'access': str(refresh.access_token),
         }
 
-def process_image(image):
-    """Process and optimize uploaded image"""
-    try:
-        im = Image.open(image)
-        if im.mode != 'RGB':
-            im = im.convert('RGB')
-
-        im.thumbnail((1080, 1080))
-
-        output = BytesIO()
-        im.save(output, format='JPEG', quality=85)
-        output.seek(0)
-
-        # Get the actual file size (not the BytesIO object size)
-        file_size = len(output.getvalue())
-
-        # Extract filename without extension and handle multiple dots
-        original_name = image.name.rsplit('.', 1)[0] if '.' in image.name else image.name
-
-        return InMemoryUploadedFile(
-            output,
-            'ImageField',
-            f"{original_name}.jpg",
-            'image/jpeg',
-            file_size,
-            None
-        )
-    except Exception as e:
-        raise serializers.ValidationError(f"Error processing image '{image.name}': {str(e)}")
 
 class PostImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -164,14 +131,7 @@ class PostSerializer(serializers.ModelSerializer):
         return False
 
 class PostCreateUpdateSerializer(serializers.ModelSerializer):
-    # Support file-based upload (backward compatibility)
-    images = serializers.ListField(
-        child=serializers.ImageField(max_length=10000000, allow_empty_file=False, use_url=False),
-        write_only=True,
-        required=False,
-        max_length=10  # Maximum 10 images per post
-    )
-    # Support URL-based upload (new Supabase flow)
+    # Supabase URL-based upload only
     image_urls = serializers.ListField(
         child=serializers.URLField(),
         write_only=True,
@@ -182,24 +142,22 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['category', 'headline', 'description', 'images', 'image_urls']
+        fields = ['category', 'headline', 'description', 'image_urls']
 
     def validate(self, attrs):
         category = attrs.get('category')
-        images = attrs.get('images', [])
         image_urls = attrs.get('image_urls', [])
 
         if self.instance is None:  # Create
-            # For PROBLEM category, require at least one image (either file or URL)
-            if category == PostCategory.PROBLEM and not images and not image_urls:
+            # For PROBLEM category, require at least one image URL
+            if category == PostCategory.PROBLEM and not image_urls:
                 raise serializers.ValidationError({
-                    "images": "At least one image is required for PROBLEM category."
+                    "image_urls": "At least one image is required for PROBLEM category."
                 })
-        
+
         return attrs
 
     def create(self, validated_data):
-        images_data = validated_data.pop('images', [])
         image_urls_data = validated_data.pop('image_urls', [])
         user = self.context['request'].user
         pincode = user.pincode
@@ -208,24 +166,13 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             post = Post.objects.create(user=user, pincode=pincode, **validated_data)
 
-            # Handle file-based uploads (backward compatibility)
-            for idx, image_data in enumerate(images_data):
-                try:
-                    processed_image = process_image(image_data)
-                    PostImage.objects.create(post=post, image=processed_image)
-                except Exception as e:
-                    raise serializers.ValidationError({
-                        "images": f"Error processing image {idx + 1}: {str(e)}"
-                    })
-
-            # Handle URL-based uploads (new Supabase flow)
+            # Create PostImage records for each Supabase URL
             for image_url in image_urls_data:
                 PostImage.objects.create(post=post, image_url=image_url)
 
         return post
 
     def update(self, instance, validated_data):
-        images_data = validated_data.pop('images', None)
         image_urls_data = validated_data.pop('image_urls', None)
 
         # Use transaction to ensure all-or-nothing update
@@ -234,36 +181,14 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
             instance.description = validated_data.get('description', instance.description)
             instance.save()
 
-            # If either images or image_urls is provided, replace all images
-            if images_data is not None or image_urls_data is not None:
-                # Collect new images first before deleting old ones
-                new_images = []
-
-                # Process file-based uploads
-                if images_data:
-                    for idx, image_data in enumerate(images_data):
-                        try:
-                            processed_image = process_image(image_data)
-                            new_images.append(('file', processed_image))
-                        except Exception as e:
-                            raise serializers.ValidationError({
-                                "images": f"Error processing image {idx + 1}: {str(e)}"
-                            })
-
-                # Collect URL-based uploads
-                if image_urls_data:
-                    for image_url in image_urls_data:
-                        new_images.append(('url', image_url))
-
-                # Only delete old images after successfully processing new ones
+            # If image_urls is provided, replace all images
+            if image_urls_data is not None:
+                # Delete old images
                 instance.images.all().delete()
 
-                # Create new image records
-                for img_type, img_data in new_images:
-                    if img_type == 'file':
-                        PostImage.objects.create(post=instance, image=img_data)
-                    else:  # url
-                        PostImage.objects.create(post=instance, image_url=img_data)
+                # Create new image records from Supabase URLs
+                for image_url in image_urls_data:
+                    PostImage.objects.create(post=instance, image_url=image_url)
 
         return instance
 
