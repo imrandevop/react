@@ -5,6 +5,7 @@ from .models import Post, PostImage, PostCategory, Vote, Comment, PostReport
 from PIL import Image
 from io import BytesIO
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.db import transaction
 import sys
 
 User = get_user_model()
@@ -46,24 +47,34 @@ class LoginSerializer(serializers.Serializer):
         }
 
 def process_image(image):
-    im = Image.open(image)
-    if im.mode != 'RGB':
-        im = im.convert('RGB')
-    
-    im.thumbnail((1080, 1080))
-    
-    output = BytesIO()
-    im.save(output, format='JPEG', quality=85)
-    output.seek(0)
-    
-    return InMemoryUploadedFile(
-        output,
-        'ImageField',
-        "%s.jpg" % image.name.split('.')[0],
-        'image/jpeg',
-        sys.getsizeof(output),
-        None
-    )
+    """Process and optimize uploaded image"""
+    try:
+        im = Image.open(image)
+        if im.mode != 'RGB':
+            im = im.convert('RGB')
+
+        im.thumbnail((1080, 1080))
+
+        output = BytesIO()
+        im.save(output, format='JPEG', quality=85)
+        output.seek(0)
+
+        # Get the actual file size (not the BytesIO object size)
+        file_size = len(output.getvalue())
+
+        # Extract filename without extension and handle multiple dots
+        original_name = image.name.rsplit('.', 1)[0] if '.' in image.name else image.name
+
+        return InMemoryUploadedFile(
+            output,
+            'ImageField',
+            f"{original_name}.jpg",
+            'image/jpeg',
+            file_size,
+            None
+        )
+    except Exception as e:
+        raise serializers.ValidationError(f"Error processing image '{image.name}': {str(e)}")
 
 class PostImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -157,13 +168,15 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
     images = serializers.ListField(
         child=serializers.ImageField(max_length=10000000, allow_empty_file=False, use_url=False),
         write_only=True,
-        required=False
+        required=False,
+        max_length=10  # Maximum 10 images per post
     )
     # Support URL-based upload (new Supabase flow)
     image_urls = serializers.ListField(
         child=serializers.URLField(),
         write_only=True,
-        required=False
+        required=False,
+        max_length=10  # Maximum 10 images per post
     )
     headline = serializers.CharField(required=False, allow_null=True)
 
@@ -190,44 +203,68 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
         image_urls_data = validated_data.pop('image_urls', [])
         user = self.context['request'].user
         pincode = user.pincode
-        
-        post = Post.objects.create(user=user, pincode=pincode, **validated_data)
-        
-        # Handle file-based uploads (backward compatibility)
-        for image_data in images_data:
-            processed_image = process_image(image_data)
-            PostImage.objects.create(post=post, image=processed_image)
-        
-        # Handle URL-based uploads (new Supabase flow)
-        for image_url in image_urls_data:
-            PostImage.objects.create(post=post, image_url=image_url)
-            
+
+        # Use transaction to ensure all-or-nothing creation
+        with transaction.atomic():
+            post = Post.objects.create(user=user, pincode=pincode, **validated_data)
+
+            # Handle file-based uploads (backward compatibility)
+            for idx, image_data in enumerate(images_data):
+                try:
+                    processed_image = process_image(image_data)
+                    PostImage.objects.create(post=post, image=processed_image)
+                except Exception as e:
+                    raise serializers.ValidationError({
+                        "images": f"Error processing image {idx + 1}: {str(e)}"
+                    })
+
+            # Handle URL-based uploads (new Supabase flow)
+            for image_url in image_urls_data:
+                PostImage.objects.create(post=post, image_url=image_url)
+
         return post
 
     def update(self, instance, validated_data):
         images_data = validated_data.pop('images', None)
         image_urls_data = validated_data.pop('image_urls', None)
-        
-        instance.headline = validated_data.get('headline', instance.headline)
-        instance.description = validated_data.get('description', instance.description)
-        instance.save()
 
-        # If either images or image_urls is provided, replace all images
-        if images_data is not None or image_urls_data is not None:
-            # Replace images fully
-            instance.images.all().delete()
-            
-            # Handle file-based uploads
-            if images_data:
-                for image_data in images_data:
-                    processed_image = process_image(image_data)
-                    PostImage.objects.create(post=instance, image=processed_image)
-            
-            # Handle URL-based uploads
-            if image_urls_data:
-                for image_url in image_urls_data:
-                    PostImage.objects.create(post=instance, image_url=image_url)
-        
+        # Use transaction to ensure all-or-nothing update
+        with transaction.atomic():
+            instance.headline = validated_data.get('headline', instance.headline)
+            instance.description = validated_data.get('description', instance.description)
+            instance.save()
+
+            # If either images or image_urls is provided, replace all images
+            if images_data is not None or image_urls_data is not None:
+                # Collect new images first before deleting old ones
+                new_images = []
+
+                # Process file-based uploads
+                if images_data:
+                    for idx, image_data in enumerate(images_data):
+                        try:
+                            processed_image = process_image(image_data)
+                            new_images.append(('file', processed_image))
+                        except Exception as e:
+                            raise serializers.ValidationError({
+                                "images": f"Error processing image {idx + 1}: {str(e)}"
+                            })
+
+                # Collect URL-based uploads
+                if image_urls_data:
+                    for image_url in image_urls_data:
+                        new_images.append(('url', image_url))
+
+                # Only delete old images after successfully processing new ones
+                instance.images.all().delete()
+
+                # Create new image records
+                for img_type, img_data in new_images:
+                    if img_type == 'file':
+                        PostImage.objects.create(post=instance, image=img_data)
+                    else:  # url
+                        PostImage.objects.create(post=instance, image_url=img_data)
+
         return instance
 
 class AdSerializer(serializers.ModelSerializer):
