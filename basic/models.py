@@ -127,6 +127,47 @@ class PostImage(models.Model):
             return self.image.url
         return None
 
+    def get_transformed_url(self, width=1000, quality=80):
+        """
+        Get Supabase Image Transformation URL with WebP format
+        Uses /storage/v1/render/image endpoint for on-the-fly transformation
+
+        Args:
+            width: Target width in pixels (default: 1000)
+            quality: WebP quality 1-100 (default: 80)
+
+        Returns:
+            Transformed URL or original URL if not from Supabase
+        """
+        base_url = self.get_image_url()
+        if not base_url:
+            return None
+
+        # Only transform Supabase Storage URLs
+        from django.conf import settings
+        if settings.SUPABASE_URL and settings.SUPABASE_URL in base_url:
+            # Extract the file path from the public URL
+            # Format: https://{project}.supabase.co/storage/v1/object/public/{bucket}/{path}
+            # Target: https://{project}.supabase.co/storage/v1/render/image/public/{bucket}/{path}?width={width}&quality={quality}&format=webp
+
+            if '/storage/v1/object/public/' in base_url:
+                # Replace /object/public/ with /render/image/public/
+                transformed_url = base_url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')
+                # Add transformation parameters
+                transformed_url += f'?width={width}&quality={quality}&format=webp'
+                return transformed_url
+
+        # Return original URL for non-Supabase images
+        return base_url
+
+    def get_thumbnail_url(self):
+        """Get 400px thumbnail URL with WebP format"""
+        return self.get_transformed_url(width=400, quality=80)
+
+    def get_full_url(self):
+        """Get 1000px full-size URL with WebP format"""
+        return self.get_transformed_url(width=1000, quality=80)
+
 class Vote(models.Model):
     UPVOTE = 1
     DOWNVOTE = -1

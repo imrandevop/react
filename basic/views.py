@@ -6,8 +6,11 @@ from rest_framework.pagination import PageNumberPagination, CursorPagination
 from rest_framework.parsers import JSONParser
 from django.db.models import Count, Q
 from django.utils import timezone
+from django.core.cache import cache
+from django.utils.encoding import force_str
+import hashlib
 from .models import Post, PostCategory, Vote, Comment, PostReport
-from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer, CommentSerializer, PostReportSerializer
+from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer, CommentSerializer, PostReportSerializer, FeedPostSerializer
 
 class LoginAPIView(APIView):
     def post(self, request):
@@ -365,6 +368,24 @@ class FeedAPIView(APIView):
         # Priority: pincode > localBody > user's pincode
         pincode_param = request.query_params.get('pincode')
         localbody_param = request.query_params.get('localBody')
+        cursor_param = request.query_params.get('cursor', '')
+
+        # Generate cache key based on request parameters
+        cache_key_parts = [
+            'feed',
+            tab_mapped,
+            str(user.id),
+            pincode_param or '',
+            localbody_param or '',
+            cursor_param
+        ]
+        cache_key_string = ':'.join(cache_key_parts)
+        cache_key = f"feed_{hashlib.md5(cache_key_string.encode()).hexdigest()}"
+
+        # Try to get cached response (60 seconds cache)
+        cached_response = cache.get(cache_key)
+        if cached_response:
+            return Response(cached_response)
 
         if pincode_param:
             # Highest priority: filter by pincode parameter
@@ -375,7 +396,7 @@ class FeedAPIView(APIView):
         else:
             # Default: filter by user's pincode
             queryset = Post.objects.filter(pincode=user.pincode)
-        
+
         # Filter out ADVERTISEMENTS from main post stream (as discussed)
         queryset = queryset.exclude(category=PostCategory.ADVERTISEMENT)
 
@@ -407,7 +428,8 @@ class FeedAPIView(APIView):
         page = paginator.paginate_queryset(queryset, request)
 
         if page is not None:
-            post_serializer = PostSerializer(page, many=True, context={'request': request})
+            # Use minimal FeedPostSerializer for feed listing
+            post_serializer = FeedPostSerializer(page, many=True, context={'request': request})
 
             # Ads Retrieval (Separate List)
             # Use same locality filter as posts for ads
@@ -427,20 +449,30 @@ class FeedAPIView(APIView):
             # Add ads to the response data
             response.data['ads'] = ads_serializer.data
 
-            return Response({
+            response_data = {
                 "status": 200,
                 "data": response.data
-            })
+            }
+
+            # Cache the response for 60 seconds
+            cache.set(cache_key, response_data, 60)
+
+            return Response(response_data)
 
         # Fallback (shouldn't happen with cursor pagination)
-        post_serializer = PostSerializer(queryset, many=True, context={'request': request})
-        return Response({
+        post_serializer = FeedPostSerializer(queryset, many=True, context={'request': request})
+        fallback_response = {
             "status": 200,
             "data": {
                 "posts": post_serializer.data,
                 "ads": []
             }
-        }) 
+        }
+
+        # Cache fallback response for 60 seconds
+        cache.set(cache_key, fallback_response, 60)
+
+        return Response(fallback_response) 
 
 # Refresh endpoint logic can basically reuse FeedAPIView or similar
 class DeleteAccountAPIView(APIView):

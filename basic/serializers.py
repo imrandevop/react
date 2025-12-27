@@ -94,17 +94,17 @@ class PostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'id', 'userId', 'headline', 'imageUrls', 'description', 
-            'category', 'upvotes', 'downvotes', 'commentsCount', 
+            'id', 'userId', 'headline', 'imageUrls', 'description',
+            'category', 'upvotes', 'downvotes', 'commentsCount',
             'created_at', 'hasUpvoted', 'hasDownvoted'
         ]
 
     def get_imageUrls(self, obj):
-        request = self.context.get('request')
+        """Return 1000px WebP transformed URLs for full post view"""
         urls = []
         for img in obj.images.all():
-            # Use the model's get_image_url method which handles both Supabase URLs and local files
-            img_url = img.get_image_url(request)
+            # Use transformed URL (1000px, WebP, quality 80)
+            img_url = img.get_full_url()
             if img_url:
                 urls.append(img_url)
         return urls
@@ -198,7 +198,7 @@ class AdSerializer(serializers.ModelSerializer):
     sponsorName = serializers.CharField(source='sponsor_name')
     buttonText = serializers.CharField(source='button_text')
     buttonUrl = serializers.CharField(source='button_url')
-    
+
     class Meta:
         model = Post
         fields = ['id', 'title', 'description', 'imageUrls', 'buttonText', 'buttonUrl', 'sponsorName']
@@ -212,3 +212,21 @@ class AdSerializer(serializers.ModelSerializer):
             if img_url:
                 urls.append(img_url)
         return urls
+
+class FeedPostSerializer(serializers.ModelSerializer):
+    """
+    Minimal serializer for feed listing
+    Returns only: id, headline, image_thumb_url, created_at
+    """
+    image_thumb_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Post
+        fields = ['id', 'headline', 'image_thumb_url', 'created_at']
+
+    def get_image_thumb_url(self, obj):
+        """Return 400px WebP thumbnail URL"""
+        first_image = obj.images.first()
+        if first_image:
+            return first_image.get_thumbnail_url()
+        return None
