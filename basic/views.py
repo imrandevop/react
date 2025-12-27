@@ -43,18 +43,18 @@ class StandardResultsSetPagination(PageNumberPagination):
     page_size_query_param = 'limit'
     max_page_size = 100
 
-class FeedNewestCursorPagination(CursorPagination):
-    """Instagram-style: Newest first"""
+class FeedHotCursorPagination(CursorPagination):
+    """Reddit-style: Hot score ranking"""
     page_size = 20
-    ordering = '-created_at'
+    ordering = '-hot_score'
     cursor_query_param = 'cursor'
     page_size_query_param = 'limit'
     max_page_size = 100
 
-class FeedHotCursorPagination(CursorPagination):
-    """Reddit-style: Hot score (for Today tab only)"""
+class YoursCursorPagination(CursorPagination):
+    """Newest first for personal posts"""
     page_size = 20
-    ordering = '-hot_score'
+    ordering = '-created_at'
     cursor_query_param = 'cursor'
     page_size_query_param = 'limit'
     max_page_size = 100
@@ -148,14 +148,14 @@ class PostViewSet(viewsets.ModelViewSet):
             now = timezone.now()
             queryset = queryset.filter(created_at__date=now.date()).order_by('-hot_score', '-created_at')
         elif filter_param == 'PROBLEMS':
-            queryset = queryset.filter(category=PostCategory.PROBLEM).order_by('-created_at')
+            queryset = queryset.filter(category=PostCategory.PROBLEM).order_by('-hot_score', '-created_at')
         elif filter_param == 'UPDATES':
-            queryset = queryset.filter(category=PostCategory.UPDATE).order_by('-created_at')
+            queryset = queryset.filter(category=PostCategory.UPDATE).order_by('-hot_score', '-created_at')
         elif filter_param == 'YOURS':
             queryset = queryset.filter(user=request.user).order_by('-created_at')
         else:
-            # Default: Instagram-style newest first
-            queryset = queryset.order_by('-created_at')
+            # Default: Reddit-style hot score
+            queryset = queryset.order_by('-hot_score', '-created_at')
 
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -380,12 +380,11 @@ class FeedAPIView(APIView):
         queryset = queryset.exclude(category=PostCategory.ADVERTISEMENT)
 
         # Tab Logic
-        # "Today" tab: Reddit-style hot score (upvotes + time decay)
-        # All other tabs: Instagram-style newest first
+        # All tabs use Reddit-style hot score except "Yours" (newest first)
 
         if tab_mapped == "All":
-            queryset = queryset.order_by('-created_at')
-            paginator = FeedNewestCursorPagination()
+            queryset = queryset.order_by('-hot_score', '-created_at')
+            paginator = FeedHotCursorPagination()
 
         elif tab_mapped == "Today":
             now = timezone.now()
@@ -393,16 +392,16 @@ class FeedAPIView(APIView):
             paginator = FeedHotCursorPagination()
 
         elif tab_mapped == "Problems":
-            queryset = queryset.filter(category=PostCategory.PROBLEM).order_by('-created_at')
-            paginator = FeedNewestCursorPagination()
+            queryset = queryset.filter(category=PostCategory.PROBLEM).order_by('-hot_score', '-created_at')
+            paginator = FeedHotCursorPagination()
 
         elif tab_mapped == "Updates":
-            queryset = queryset.filter(category=PostCategory.UPDATE).order_by('-created_at')
-            paginator = FeedNewestCursorPagination()
+            queryset = queryset.filter(category=PostCategory.UPDATE).order_by('-hot_score', '-created_at')
+            paginator = FeedHotCursorPagination()
 
         elif tab_mapped == "Yours":
             queryset = queryset.filter(user=user).order_by('-created_at')
-            paginator = FeedNewestCursorPagination()
+            paginator = YoursCursorPagination()
 
         # Cursor-based Pagination
         page = paginator.paginate_queryset(queryset, request)
