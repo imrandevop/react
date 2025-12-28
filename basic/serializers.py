@@ -101,10 +101,11 @@ class PostSerializer(serializers.ModelSerializer):
 
     def get_imageUrls(self, obj):
         """Return 1000px WebP transformed URLs for full post view"""
+        request = self.context.get('request')
         urls = []
         for img in obj.images.all():
             # Use transformed URL (1000px, WebP, quality 80)
-            img_url = img.get_full_url()
+            img_url = img.get_full_url(request=request)
             if img_url:
                 urls.append(img_url)
         return urls
@@ -226,7 +227,8 @@ class FeedPostSerializer(serializers.ModelSerializer):
 
     def get_image_thumb_url(self, obj):
         """Return 400px WebP thumbnail URL"""
+        request = self.context.get('request')
         first_image = obj.images.first()
         if first_image:
-            return first_image.get_thumbnail_url()
+            return first_image.get_thumbnail_url(request=request)
         return None

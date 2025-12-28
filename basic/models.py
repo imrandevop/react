@@ -127,7 +127,7 @@ class PostImage(models.Model):
             return self.image.url
         return None
 
-    def get_transformed_url(self, width=1000, quality=80):
+    def get_transformed_url(self, width=1000, quality=80, request=None):
         """
         Get Supabase Image Transformation URL with WebP format
         Uses /storage/v1/render/image endpoint for on-the-fly transformation
@@ -135,11 +135,12 @@ class PostImage(models.Model):
         Args:
             width: Target width in pixels (default: 1000)
             quality: WebP quality 1-100 (default: 80)
+            request: Django request object for building absolute URIs
 
         Returns:
             Transformed URL or original URL if not from Supabase
         """
-        base_url = self.get_image_url()
+        base_url = self.get_image_url(request=request)
         if not base_url:
             return None
 
@@ -160,13 +161,13 @@ class PostImage(models.Model):
         # Return original URL for non-Supabase images
         return base_url
 
-    def get_thumbnail_url(self):
+    def get_thumbnail_url(self, request=None):
         """Get 400px thumbnail URL with WebP format"""
-        return self.get_transformed_url(width=400, quality=80)
+        return self.get_transformed_url(width=400, quality=80, request=request)
 
-    def get_full_url(self):
+    def get_full_url(self, request=None):
         """Get 1000px full-size URL with WebP format"""
-        return self.get_transformed_url(width=1000, quality=80)
+        return self.get_transformed_url(width=1000, quality=80, request=request)
 
 class Vote(models.Model):
     UPVOTE = 1
