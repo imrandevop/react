@@ -169,7 +169,7 @@ CACHES = {
                 'max_connections': 50,
                 'retry_on_timeout': True
             },
-            'PARSER_CLASS': 'redis.connection.HiredisParser',
+            # PARSER_CLASS removed - redis-py 5.x auto-detects hiredis if installed
             'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
         },
         'KEY_PREFIX': 'locality_app',
