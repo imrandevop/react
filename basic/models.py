@@ -120,7 +120,8 @@ class PostImage(models.Model):
     def get_image_url(self, request=None):
         """Get the image URL - either from Supabase or local media"""
         if self.image_url:
-            return self.image_url
+            # Strip whitespace, newlines, and trailing characters
+            return self.image_url.strip()
         elif self.image:
             if request:
                 return request.build_absolute_uri(self.image.url)
