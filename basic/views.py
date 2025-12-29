@@ -428,8 +428,8 @@ class FeedAPIView(APIView):
         page = paginator.paginate_queryset(queryset, request)
 
         if page is not None:
-            # Use minimal FeedPostSerializer for feed listing
-            post_serializer = FeedPostSerializer(page, many=True, context={'request': request})
+            # Use full PostSerializer for Reddit/Instagram-style feed
+            post_serializer = PostSerializer(page, many=True, context={'request': request})
 
             # Ads Retrieval (Separate List)
             # Use same locality filter as posts for ads
@@ -460,7 +460,7 @@ class FeedAPIView(APIView):
             return Response(response_data)
 
         # Fallback (shouldn't happen with cursor pagination)
-        post_serializer = FeedPostSerializer(queryset, many=True, context={'request': request})
+        post_serializer = PostSerializer(queryset, many=True, context={'request': request})
         fallback_response = {
             "status": 200,
             "data": {
