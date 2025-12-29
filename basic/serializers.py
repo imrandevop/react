@@ -84,6 +84,7 @@ class PostReportSerializer(serializers.ModelSerializer):
 
 class PostSerializer(serializers.ModelSerializer):
     imageUrls = serializers.SerializerMethodField()
+    imageDimensions = serializers.SerializerMethodField()
     upvotes = serializers.SerializerMethodField()
     downvotes = serializers.SerializerMethodField()
     commentsCount = serializers.SerializerMethodField()
@@ -94,7 +95,7 @@ class PostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'id', 'userId', 'headline', 'imageUrls', 'description',
+            'id', 'userId', 'headline', 'imageUrls', 'imageDimensions', 'description',
             'category', 'upvotes', 'downvotes', 'commentsCount',
             'created_at', 'hasUpvoted', 'hasDownvoted'
         ]
@@ -109,6 +110,17 @@ class PostSerializer(serializers.ModelSerializer):
             if img_url:
                 urls.append(img_url)
         return urls
+
+    def get_imageDimensions(self, obj):
+        """Return dimensions for each image (width, height)"""
+        dimensions = []
+        for img in obj.images.all():
+            if img.width and img.height:
+                dimensions.append({"width": img.width, "height": img.height})
+            else:
+                # Return null for images without dimensions (old images)
+                dimensions.append(None)
+        return dimensions
 
     def get_upvotes(self, obj):
         return obj.votes.filter(vote_type=Vote.UPVOTE).count()
@@ -168,10 +180,22 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
             post = Post.objects.create(user=user, pincode=pincode, **validated_data)
 
             # Create PostImage records for each Supabase URL
+            from basic.image_utils import get_image_dimensions_from_url
+
             for image_url in image_urls_data:
                 # Strip whitespace and trailing ? characters
                 clean_url = image_url.strip().rstrip('?')
-                PostImage.objects.create(post=post, image_url=clean_url)
+
+                # Fetch image dimensions
+                width, height = get_image_dimensions_from_url(clean_url)
+
+                # Create PostImage with dimensions
+                PostImage.objects.create(
+                    post=post,
+                    image_url=clean_url,
+                    width=width,
+                    height=height
+                )
 
         return post
 
@@ -190,10 +214,22 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
                 instance.images.all().delete()
 
                 # Create new image records from Supabase URLs
+                from basic.image_utils import get_image_dimensions_from_url
+
                 for image_url in image_urls_data:
                     # Strip whitespace and trailing ? characters
                     clean_url = image_url.strip().rstrip('?')
-                    PostImage.objects.create(post=instance, image_url=clean_url)
+
+                    # Fetch image dimensions
+                    width, height = get_image_dimensions_from_url(clean_url)
+
+                    # Create PostImage with dimensions
+                    PostImage.objects.create(
+                        post=instance,
+                        image_url=clean_url,
+                        width=width,
+                        height=height
+                    )
 
         return instance
 

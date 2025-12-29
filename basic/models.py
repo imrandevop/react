@@ -113,6 +113,9 @@ class PostImage(models.Model):
     # Support both local file uploads (backward compatibility) and Supabase URLs
     image = models.ImageField(upload_to='post_images/', null=True, blank=True)
     image_url = models.URLField(max_length=500, null=True, blank=True)
+    # Image dimensions for aspect ratio calculation
+    width = models.PositiveIntegerField(null=True, blank=True)
+    height = models.PositiveIntegerField(null=True, blank=True)
 
     def __str__(self):
         return f"Image for Post {self.post.id}"
