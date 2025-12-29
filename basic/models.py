@@ -130,38 +130,25 @@ class PostImage(models.Model):
 
     def get_transformed_url(self, width=1000, quality=80, request=None):
         """
-        Get Supabase Image Transformation URL with WebP format
-        Uses /storage/v1/render/image endpoint for on-the-fly transformation
+        Get image URL (Supabase transformation disabled, returns direct URL)
+
+        Note: Supabase Image Transformation API is not enabled for this project.
+        Returns direct object URLs instead. Flutter/frontend should handle image
+        optimization via caching and lazy loading.
 
         Args:
-            width: Target width in pixels (default: 1000)
-            quality: WebP quality 1-100 (default: 80)
+            width: Ignored (kept for API compatibility)
+            quality: Ignored (kept for API compatibility)
             request: Django request object for building absolute URIs
 
         Returns:
-            Transformed URL or original URL if not from Supabase
+            Direct Supabase Storage URL or original URL
         """
         base_url = self.get_image_url(request=request)
         if not base_url:
             return None
 
-        # Only transform Supabase Storage URLs
-        from django.conf import settings
-        if settings.SUPABASE_URL and settings.SUPABASE_URL in base_url:
-            # Extract the file path from the public URL
-            # Format: https://{project}.supabase.co/storage/v1/object/public/{bucket}/{path}
-            # Target: https://{project}.supabase.co/storage/v1/render/image/public/{bucket}/{path}?width={width}&quality={quality}&format=webp
-
-            if '/storage/v1/object/public/' in base_url:
-                # Replace /object/public/ with /render/image/public/
-                transformed_url = base_url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')
-                # Strip any existing query parameters or trailing ?
-                transformed_url = transformed_url.split('?')[0]
-                # Add transformation parameters
-                transformed_url += f'?width={width}&quality={quality}&format=webp'
-                return transformed_url
-
-        # Return original URL for non-Supabase images
+        # Return direct URL (transformation not available)
         return base_url
 
     def get_thumbnail_url(self, request=None):
