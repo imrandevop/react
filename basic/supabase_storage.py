@@ -92,20 +92,24 @@ def generate_signed_upload_url(file_path: str, expiry_seconds: int = 3600) -> di
 def get_public_url(file_path: str) -> str:
     """
     Get the public URL for a file in Supabase Storage
-    
+
     Args:
         file_path: Path of file in bucket
-    
+
     Returns:
         Public URL to access the file
     """
     try:
         supabase = get_supabase_client()
         bucket_name = settings.SUPABASE_BUCKET_NAME
-        
+
         # Get public URL
         public_url_response = supabase.storage.from_(bucket_name).get_public_url(file_path)
-        
+
+        # Strip any whitespace/newlines and remove trailing ? if present
+        if isinstance(public_url_response, str):
+            public_url_response = public_url_response.strip().rstrip('?')
+
         return public_url_response
     except Exception as e:
         raise Exception(f"Failed to get public URL: {str(e)}")

@@ -169,7 +169,9 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
 
             # Create PostImage records for each Supabase URL
             for image_url in image_urls_data:
-                PostImage.objects.create(post=post, image_url=image_url.strip())
+                # Strip whitespace and trailing ? characters
+                clean_url = image_url.strip().rstrip('?')
+                PostImage.objects.create(post=post, image_url=clean_url)
 
         return post
 
@@ -189,7 +191,9 @@ class PostCreateUpdateSerializer(serializers.ModelSerializer):
 
                 # Create new image records from Supabase URLs
                 for image_url in image_urls_data:
-                    PostImage.objects.create(post=instance, image_url=image_url.strip())
+                    # Strip whitespace and trailing ? characters
+                    clean_url = image_url.strip().rstrip('?')
+                    PostImage.objects.create(post=instance, image_url=clean_url)
 
         return instance
 
