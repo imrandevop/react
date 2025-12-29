@@ -77,7 +77,7 @@ class Post(models.Model):
         Calculate Reddit-style hot score
         Combines upvotes/downvotes with time decay
         """
-        from django.utils.timezone import UTC
+        from django.utils import timezone
         import math
         from datetime import datetime
 
@@ -97,7 +97,7 @@ class Post(models.Model):
             sign = 0
 
         # Epoch time: seconds since a reference point
-        epoch = datetime(1970, 1, 1, tzinfo=UTC)
+        epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
         seconds = (self.created_at - epoch).total_seconds() - 1134028003
 
         # Calculate and return hot score
@@ -154,6 +154,8 @@ class PostImage(models.Model):
             if '/storage/v1/object/public/' in base_url:
                 # Replace /object/public/ with /render/image/public/
                 transformed_url = base_url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')
+                # Strip any existing query parameters or trailing ?
+                transformed_url = transformed_url.split('?')[0]
                 # Add transformation parameters
                 transformed_url += f'?width={width}&quality={quality}&format=webp'
                 return transformed_url
