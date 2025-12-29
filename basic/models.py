@@ -197,3 +197,25 @@ class PostReport(models.Model):
 
     def __str__(self):
         return f"Report by {self.user.localBody} on Post {self.post.id}"
+
+class UserBlock(models.Model):
+    """
+    One-way user blocking system
+    blocker: The user who is blocking
+    blocked: The user who is being blocked
+    """
+    blocker = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blocking')
+    blocked = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blocked_by')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('blocker', 'blocked')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.blocker.localBody} blocked {self.blocked.localBody}"
+
+    def save(self, *args, **kwargs):
+        if self.blocker == self.blocked:
+            raise ValueError("Users cannot block themselves")
+        super().save(*args, **kwargs)

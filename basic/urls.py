@@ -1,9 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import LoginAPIView, PostViewSet, FeedAPIView, DeleteAccountAPIView, GenerateUploadURLAPIView
+from .views import LoginAPIView, PostViewSet, FeedAPIView, DeleteAccountAPIView, GenerateUploadURLAPIView, BlockViewSet
 
 router = DefaultRouter()
 router.register(r'posts', PostViewSet, basename='post')
+router.register(r'blocks', BlockViewSet, basename='block')
 
 urlpatterns = [
     path('auth/login', LoginAPIView.as_view(), name='login'),

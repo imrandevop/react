@@ -9,8 +9,8 @@ from django.utils import timezone
 from django.core.cache import cache
 from django.utils.encoding import force_str
 import hashlib
-from .models import Post, PostCategory, Vote, Comment, PostReport
-from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer, CommentSerializer, PostReportSerializer, FeedPostSerializer
+from .models import Post, PostCategory, Vote, Comment, PostReport, UserBlock
+from .serializers import LoginSerializer, PostSerializer, PostCreateUpdateSerializer, AdSerializer, CommentSerializer, PostReportSerializer, FeedPostSerializer, UserBlockSerializer, BlockedUserListSerializer
 
 class LoginAPIView(APIView):
     def post(self, request):
@@ -69,11 +69,15 @@ class PostViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         user = self.request.user
+        # Get blocked user IDs
+        blocked_user_ids = UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True)
+
         # Allow voting and viewing any post, not just from user's pincode
         if self.action in ['retrieve', 'upvote', 'downvote', 'comments', 'update_comment', 'delete_comment', 'report']:
-            return Post.objects.all()
-        # For listing and other actions, filter by pincode
-        queryset = Post.objects.filter(pincode=user.pincode)
+            # Filter out posts from blocked users
+            return Post.objects.exclude(user_id__in=blocked_user_ids)
+        # For listing and other actions, filter by pincode and blocked users
+        queryset = Post.objects.filter(pincode=user.pincode).exclude(user_id__in=blocked_user_ids)
         return queryset
 
     def get_serializer_class(self):
@@ -400,6 +404,10 @@ class FeedAPIView(APIView):
         # Filter out ADVERTISEMENTS from main post stream (as discussed)
         queryset = queryset.exclude(category=PostCategory.ADVERTISEMENT)
 
+        # Filter out posts from blocked users (one-way block)
+        blocked_user_ids = UserBlock.objects.filter(blocker=user).values_list('blocked_id', flat=True)
+        queryset = queryset.exclude(user_id__in=blocked_user_ids)
+
         # Tab Logic
         # All tabs use Reddit-style hot score except "Yours" (newest first)
 
@@ -502,23 +510,23 @@ class GenerateUploadURLAPIView(APIView):
 
     def post(self, request):
         from .supabase_storage import generate_signed_upload_url, generate_unique_filename
-        
+
         filename = request.data.get('filename')
         content_type = request.data.get('content_type', 'image/jpeg')
-        
+
         if not filename:
             return Response({
                 "status": 400,
                 "message": "filename is required"
             }, status=status.HTTP_400_BAD_REQUEST)
-        
+
         try:
             # Generate unique file path
             file_path = generate_unique_filename(filename, prefix="posts")
-            
+
             # Generate signed upload URL
             upload_data = generate_signed_upload_url(file_path)
-            
+
             return Response({
                 "status": 200,
                 "data": {
@@ -533,3 +541,103 @@ class GenerateUploadURLAPIView(APIView):
                 "status": 500,
                 "message": f"Failed to generate upload URL: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class BlockViewSet(viewsets.ViewSet):
+    """
+    ViewSet for managing user blocks
+    Provides endpoints for:
+    - Blocking a user (POST)
+    - Unblocking a user (DELETE)
+    - Getting list of blocked users (GET)
+    - Checking if a user is blocked (GET detail)
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def create(self, request):
+        """
+        Block a user
+        POST /api/blocks/
+        Body: {"blocked_user_id": 123}
+        """
+        serializer = UserBlockSerializer(data=request.data, context={'request': request})
+
+        if not serializer.is_valid():
+            return Response({
+                "status": 400,
+                "message": "Failed to block user",
+                "errors": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        block = serializer.save()
+
+        return Response({
+            "status": 201,
+            "message": "User blocked successfully",
+            "data": UserBlockSerializer(block, context={'request': request}).data
+        }, status=status.HTTP_201_CREATED)
+
+    def list(self, request):
+        """
+        Get list of all users blocked by the current user
+        GET /api/blocks/
+        """
+        blocked_users = UserBlock.objects.filter(blocker=request.user).select_related('blocked')
+        serializer = BlockedUserListSerializer(blocked_users, many=True)
+
+        return Response({
+            "status": 200,
+            "data": serializer.data
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='unblock')
+    def unblock(self, request):
+        """
+        Unblock a user
+        POST /api/blocks/unblock/
+        Body: {"blocked_user_id": 123}
+        """
+        blocked_user_id = request.data.get('blocked_user_id')
+
+        if not blocked_user_id:
+            return Response({
+                "status": 400,
+                "message": "blocked_user_id is required"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            block = UserBlock.objects.get(blocker=request.user, blocked_id=blocked_user_id)
+            block.delete()
+
+            return Response({
+                "status": 200,
+                "message": "User unblocked successfully"
+            }, status=status.HTTP_200_OK)
+        except UserBlock.DoesNotExist:
+            return Response({
+                "status": 404,
+                "message": "Block not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=True, methods=['get'], url_path='check')
+    def check_block_status(self, request, pk=None):
+        """
+        Check if a specific user is blocked
+        GET /api/blocks/{user_id}/check/
+        """
+        try:
+            user_id = int(pk)
+            is_blocked = UserBlock.objects.filter(blocker=request.user, blocked_id=user_id).exists()
+            is_blocking_you = UserBlock.objects.filter(blocker_id=user_id, blocked=request.user).exists()
+
+            return Response({
+                "status": 200,
+                "data": {
+                    "is_blocked": is_blocked,
+                    "is_blocking_you": is_blocking_you
+                }
+            }, status=status.HTTP_200_OK)
+        except (ValueError, TypeError):
+            return Response({
+                "status": 400,
+                "message": "Invalid user ID"
+            }, status=status.HTTP_400_BAD_REQUEST)

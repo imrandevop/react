@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Post, PostImage, PostCategory, Vote, Comment, PostReport
+from .models import Post, PostImage, PostCategory, Vote, Comment, PostReport, UserBlock
 from django.db import transaction
 
 User = get_user_model()
@@ -236,3 +236,64 @@ class FeedPostSerializer(serializers.ModelSerializer):
         if first_image:
             return first_image.get_thumbnail_url(request=request)
         return None
+
+class UserBlockSerializer(serializers.ModelSerializer):
+    """Serializer for blocking/unblocking users"""
+    blocked_user_id = serializers.IntegerField(write_only=True)
+    blocked_user = serializers.SerializerMethodField(read_only=True)
+    blocked_local_body = serializers.CharField(source='blocked.localBody', read_only=True)
+
+    class Meta:
+        model = UserBlock
+        fields = ['id', 'blocked_user_id', 'blocked_user', 'blocked_local_body', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+    def get_blocked_user(self, obj):
+        return {
+            'id': obj.blocked.id,
+            'userId': str(obj.blocked.userId),
+            'localBody': obj.blocked.localBody
+        }
+
+    def validate_blocked_user_id(self, value):
+        request = self.context.get('request')
+
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Authentication required")
+
+        if request.user.id == value:
+            raise serializers.ValidationError("You cannot block yourself")
+
+        try:
+            User.objects.get(id=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User does not exist")
+
+        return value
+
+    def create(self, validated_data):
+        blocker = self.context['request'].user
+        blocked_user_id = validated_data.pop('blocked_user_id')
+        blocked_user = User.objects.get(id=blocked_user_id)
+
+        user_block, created = UserBlock.objects.get_or_create(
+            blocker=blocker,
+            blocked=blocked_user
+        )
+
+        return user_block
+
+class BlockedUserListSerializer(serializers.ModelSerializer):
+    """Serializer for listing blocked users"""
+    user = serializers.SerializerMethodField()
+
+    class Meta:
+        model = UserBlock
+        fields = ['id', 'user', 'created_at']
+
+    def get_user(self, obj):
+        return {
+            'id': obj.blocked.id,
+            'userId': str(obj.blocked.userId),
+            'localBody': obj.blocked.localBody
+        }
