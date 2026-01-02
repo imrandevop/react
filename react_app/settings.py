@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-&6w13sud8dt)%lioq34y&lje-e#+qq@o1)@d@e$0xvdq7&#(l)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['142.93.215.250', 'testserver', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['142.93.215.250', 'testserver', 'localhost', '127.0.0.1', 'react.solidapps.app']
 
 
 # Application definition
@@ -127,7 +127,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
 
 AUTH_USER_MODEL = 'basic.User'
 
