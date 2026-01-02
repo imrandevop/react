@@ -27,6 +27,8 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['142.93.215.250', 'testserver', 'localhost', '127.0.0.1', 'react.solidapps.app']
 
+# Disable automatic slash appending to support old API clients
+APPEND_SLASH = False
 
 # Application definition
 
