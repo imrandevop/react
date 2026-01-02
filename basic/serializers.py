@@ -27,10 +27,8 @@ class LoginSerializer(serializers.Serializer):
             user.pincode = pincode
             user.save()
         except User.DoesNotExist:
-            # Create new user with the provided userId
-            user = User.objects.create(userId=userId, localBody=localBody, pincode=pincode)
-            user.set_unusable_password()
-            user.save()
+            # Create new user with the provided userId (API user - no username)
+            user = User.objects.create_user(userId=userId, localBody=localBody, pincode=pincode)
 
         attrs['user'] = user
         return attrs

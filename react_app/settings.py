@@ -131,6 +131,11 @@ STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'basic.User'
 
+# Authentication backends
+AUTHENTICATION_BACKENDS = [
+    'basic.admin_backend.AdminBackend',  # For admin panel username/password login
+]
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',

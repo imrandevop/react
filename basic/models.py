@@ -3,21 +3,42 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 import uuid
 
 class UserManager(BaseUserManager):
-    def create_user(self, userId, localBody, pincode):
-        if not userId:
-            raise ValueError('Users must have a userId')
+    def create_user(self, username=None, userId=None, localBody=None, pincode=None, password=None):
+        # For regular API users (no username, no password)
+        if not username:
+            if not userId:
+                userId = uuid.uuid4()
+            if not localBody:
+                raise ValueError('Users must have a localBody')
+            user = self.model(userId=userId, localBody=localBody, pincode=pincode, username=None)
+            user.set_unusable_password()
+            user.save(using=self._db)
+            return user
+
+        # For admin users (with username and password)
         if not localBody:
-            raise ValueError('Users must have a localBody')
-        user = self.model(userId=userId, localBody=localBody, pincode=pincode)
-        # Storing pincode as plain text as requested.
-        # We are NOT hashing it into the 'password' field.
-        user.set_unusable_password()
+            localBody = username  # Use username as localBody for admin
+        user = self.model(username=username, userId=userId or uuid.uuid4(), localBody=localBody, pincode=pincode or '000000')
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, userId, localBody, pincode):
-        user = self.create_user(userId, localBody, pincode=pincode)
-        user.is_admin = True
+    def create_superuser(self, username, password=None, **extra_fields):
+        localBody = extra_fields.get('localBody', username)
+        pincode = extra_fields.get('pincode', '000000')
+
+        user = self.model(
+            username=username,
+            userId=uuid.uuid4(),
+            localBody=localBody,
+            pincode=pincode,
+            is_admin=True,
+            is_active=True
+        )
+        user.set_password(password)
         user.save(using=self._db)
         return user
 
@@ -25,12 +46,13 @@ class User(AbstractBaseUser):
     userId = models.UUIDField(unique=True, editable=False, default=uuid.uuid4)
     localBody = models.CharField(max_length=255)
     pincode = models.CharField(max_length=6)
+    username = models.CharField(max_length=150, unique=True, null=True, blank=True)  # For admin login only
     is_active = models.BooleanField(default=True)
     is_admin = models.BooleanField(default=False)
 
     objects = UserManager()
 
-    USERNAME_FIELD = 'userId'
+    USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['localBody', 'pincode']
 
     def __str__(self):
