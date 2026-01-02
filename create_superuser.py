@@ -5,8 +5,8 @@ Script to create a superuser with username/password for Django admin panel.
 from basic.models import User
 
 # Configuration - Modify these as needed
-USERNAME = "admin"
-PASSWORD = "admin123"  # Change this to a secure password
+USERNAME = "react"
+PASSWORD = "react1210"  # Change this to a secure password
 LOCAL_BODY = "Admin"
 PINCODE = "000000"
 
